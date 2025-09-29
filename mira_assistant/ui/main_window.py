@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """PySide6 based desktop UI for Mira Assistant with modern layout."""
 from __future__ import annotations
 

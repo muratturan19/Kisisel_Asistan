@@ -3,8 +3,15 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+if sys.version_info >= (3, 13):  # pragma: no cover - defensive runtime guard
+    raise RuntimeError(
+        "Mira Assistant currently supports Python < 3.13. "
+        "Some native dependencies (PyAV) do not yet provide wheels for Python 3.13."
+    )
 
 import typer
 from rich.console import Console

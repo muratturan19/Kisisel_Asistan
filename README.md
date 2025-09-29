@@ -22,6 +22,17 @@ pip install -r requirements.txt
 Windows bildirimleri için isteğe bağlı olarak `win10toast` kütüphanesini ayrıca yükleyebilirsiniz. Bu bağımlılık artık kurulumun
 zorunlu bir parçası değildir; yüklenmediği durumda uygulama bildirim mesajlarını yalnızca günlük kayıtlarına yazar.
 
+Kurulum sırasında bir paket kaynaklı hata alırsanız `scripts/check_requirements.ps1` betiğiyle hangi bağımlılığın sorun çıkardığını
+tespit edebilirsiniz:
+
+```powershell
+pwsh ./scripts/check_requirements.ps1
+```
+
+Betik her bağımlılığı tek tek yükler; ilk hata aldığında durur ve paket adını kırmızı olarak bildirir. Hatanın ardındaki ayrıntı için
+eşlik eden `pip` çıktısını inceleyebilirsiniz. Gerekirse `-ContinueOnError` parametresiyle tüm bağımlılıkların kontrol edilmesini
+sağlayabilir veya `-VerbosePip` parametresiyle `pip` çıktısını ayrıntılandırabilirsiniz.
+
 OCR için sistemde Tesseract kurulumu gerekir:
 
 ```powershell

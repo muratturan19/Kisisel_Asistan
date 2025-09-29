@@ -19,6 +19,9 @@ py -3.11 -m venv venv
 pip install -r requirements.txt
 ```
 
+Windows bildirimleri için isteğe bağlı olarak `win10toast` kütüphanesini ayrıca yükleyebilirsiniz. Bu bağımlılık artık kurulumun
+zorunlu bir parçası değildir; yüklenmediği durumda uygulama bildirim mesajlarını yalnızca günlük kayıtlarına yazar.
+
 OCR için sistemde Tesseract kurulumu gerekir:
 
 ```powershell

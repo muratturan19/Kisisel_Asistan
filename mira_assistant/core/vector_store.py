@@ -1,9 +1,9 @@
-"""Vector store abstraction with a Chroma-backed implementation."""
+"""Chroma based vector store helper."""
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Sequence
+from typing import Dict, Iterable, List, Sequence
 
 from config import settings
 
@@ -11,63 +11,55 @@ LOGGER = logging.getLogger(__name__)
 
 
 class VectorStore:
-    """Thin wrapper providing an interchangeable interface."""
+    """Thin wrapper around ``chromadb`` persistent collections."""
 
-    def __init__(self, persist_directory: Path | None = None) -> None:
-        self._persist_directory = Path(persist_directory or settings.vector_store_path)
+    def __init__(self, persist_directory: Path | None = None, collection: str = "mira_documents") -> None:
+        self._persist_directory = Path(persist_directory or settings.chroma_path).expanduser()
         self._persist_directory.mkdir(parents=True, exist_ok=True)
-        self._client = None
-        self._collection = None
-        self._ensure_backend()
+        self._collection_name = collection
+        self._collection = self._initialise_collection()
 
-    def _ensure_backend(self) -> None:
+    def _initialise_collection(self):  # type: ignore[return-any]
         try:
             import chromadb  # type: ignore
 
-            self._client = chromadb.PersistentClient(path=str(self._persist_directory))
-            self._collection = self._client.get_or_create_collection("mira_documents")
+            client = chromadb.PersistentClient(path=str(self._persist_directory))
+            return client.get_or_create_collection(self._collection_name)
         except Exception as exc:  # pragma: no cover - fallback path
-            LOGGER.warning("chromadb unavailable (%s); using in-memory store", exc)
-            self._client = None
-            self._collection = _InMemoryCollection()
+            LOGGER.warning("chromadb unavailable, falling back to in-memory store (%s)", exc)
+            return _InMemoryCollection()
 
-    def add_texts(self, texts: Sequence[str], metadatas: Sequence[dict], ids: Sequence[str]) -> None:
-        if self._collection is None:
-            raise RuntimeError("Vector store backend not initialised")
-        self._collection.add(documents=list(texts), metadatas=list(metadatas), ids=list(ids))
+    def add_embeddings(self, embeddings: Sequence[Sequence[float]], *, metadatas: Sequence[Dict[str, str]], ids: Sequence[str], documents: Sequence[str]) -> None:
+        self._collection.add(embeddings=list(embeddings), metadatas=list(metadatas), ids=list(ids), documents=list(documents))
 
-    def query(self, text: str, n_results: int = 4) -> List[dict]:
-        if self._collection is None:
-            return []
-        results = self._collection.query(query_texts=[text], n_results=n_results)
-        metadatas = results.get("metadatas", [[]])[0]
-        documents = results.get("documents", [[]])[0]
-        scores = results.get("distances", [[]])[0]
-        return [
-            {"text": doc, "metadata": meta, "score": score}
-            for doc, meta, score in zip(documents, metadatas, scores)
-        ]
+    def similar(self, query_texts: Iterable[str], n_results: int = 4) -> List[Dict[str, object]]:
+        results = self._collection.query(query_texts=list(query_texts), n_results=n_results)
+        documents = results.get("documents", [[]])
+        metadatas = results.get("metadatas", [[]])
+        distances = results.get("distances", [[]])
+        payload: List[Dict[str, object]] = []
+        for docs, metas, scores in zip(documents, metadatas, distances):
+            for doc, meta, score in zip(docs, metas, scores):
+                payload.append({"text": doc, "metadata": meta, "score": score})
+        return payload
 
 
 class _InMemoryCollection:
-    """Simple fallback implementation for tests."""
-
     def __init__(self) -> None:
-        self._items: List[tuple[str, str, dict]] = []
+        self._items: List[Dict[str, object]] = []
 
-    def add(self, documents: List[str], metadatas: List[dict], ids: List[str]) -> None:
+    def add(self, embeddings=None, metadatas=None, ids=None, documents=None) -> None:  # type: ignore[no-untyped-def]
+        documents = documents or []
+        metadatas = metadatas or []
+        ids = ids or []
         for doc, meta, doc_id in zip(documents, metadatas, ids):
-            self._items.append((doc_id, doc, meta))
+            self._items.append({"id": doc_id, "text": doc, "metadata": meta})
 
-    def query(self, query_texts: List[str], n_results: int = 4) -> dict:
-        documents: List[List[str]] = [[]]
-        metadatas: List[List[dict]] = [[]]
-        distances: List[List[float]] = [[]]
-        for item in self._items[:n_results]:
-            _, doc, meta = item
-            documents[0].append(doc)
-            metadatas[0].append(meta)
-            distances[0].append(0.0)
+    def query(self, query_texts=None, n_results: int = 4):  # type: ignore[no-untyped-def]
+        del query_texts
+        documents = [[item["text"] for item in self._items[:n_results]]]
+        metadatas = [[item.get("metadata", {}) for item in self._items[:n_results]]]
+        distances = [[0.0 for _ in self._items[:n_results]]]
         return {"documents": documents, "metadatas": metadatas, "distances": distances}
 
 

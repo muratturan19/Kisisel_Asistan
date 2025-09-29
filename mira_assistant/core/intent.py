@@ -1,84 +1,158 @@
-"""Rule-based intent detection producing Action JSON."""
+"""Rule based Turkish intent detection returning Action JSON payloads."""
 from __future__ import annotations
 
 import dataclasses
 import json
 import re
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
-from .parser_tr import parse_datetime
+from .parser_tr import parse_datetime, to_utc
+from config import settings
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(slots=True)
 class Action:
+    """Container describing an intent and the structured payload."""
+
     intent: str
-    payload: Dict[str, object]
+    payload: Dict[str, Any]
 
     def to_json(self) -> str:
         return json.dumps({"intent": self.intent, "payload": self.payload}, ensure_ascii=False)
 
 
-INTENT_KEYWORDS = {
-    "add_event": ["toplant", "etkinlik", "randevu", "konser"],
-    "add_task": ["yap", "hatırla", "iş", "not"],
-    "list_tasks": ["işler", "task", "görev"],
-    "summarize_topic": ["özet", "toparla"],
-    "ingest_docs": ["arşivle", "yükle"],
-}
+ActionJSON = Dict[str, Any]
 
-
-EVENT_DEFAULT_HOUR = {
+_EVENT_KEYWORDS = {
     "toplant": 10,
+    "görüş": 10,
+    "konferans": 10,
+    "etkinlik": 20,
     "konser": 20,
+    "sunum": 10,
 }
+_TASK_KEYWORDS = ["yap", "görev", "task", "hatırla", "tamamla"]
+_LIST_EVENTS_KEYWORDS = ["ajanda", "takvim", "etkinlikler", "bugün"]
+_LIST_TASKS_KEYWORDS = ["görevleri", "yapılacak", "todo", "liste"]
+_SUMMARY_KEYWORDS = ["özet", "toparla"]
+_INGEST_KEYWORDS = ["yükle", "ekle", "arşivle"]
+_ADVISE_KEYWORDS = ["öner", "uyarı", "kontrol"]
+_REMINDER_KEYWORDS = ["hatırlat", "alarm"]
+_UPDATE_KEYWORDS = ["güncelle", "değiştir"]
+_DELETE_KEYWORDS = ["sil", "iptal"]
+_COMPLETE_KEYWORDS = ["tamamla", "bitir", "kapattım"]
+
+_TITLE_FALLBACK = "Mira Notu"
 
 
-def detect_intent(text: str) -> Optional[Action]:
-    lowered = text.lower()
-    for intent, keywords in INTENT_KEYWORDS.items():
-        if any(keyword in lowered for keyword in keywords):
-            if intent == "add_event":
-                return _build_event_action(text)
-            if intent == "add_task":
-                return Action(intent="add_task", payload={"title": text.strip()})
-            if intent == "list_tasks":
-                return Action(intent="list_tasks", payload={"scope": "today"})
-            if intent == "summarize_topic":
-                topic = _extract_topic(text)
-                return Action(intent="summarize_topic", payload={"topic": topic, "scope": "recent"})
-            if intent == "ingest_docs":
-                topic = _extract_topic(text)
-                return Action(intent="ingest_docs", payload={"topic": topic})
-    return None
+def handle(text: str) -> Optional[Action]:
+    """Return an :class:`Action` inferred from the natural language command."""
+
+    lowered = text.lower().strip()
+    if not lowered:
+        return None
+
+    for keyword, hour in _EVENT_KEYWORDS.items():
+        if keyword in lowered:
+            return _build_event_action(text, default_hour=hour)
+
+    if any(keyword in lowered for keyword in _REMINDER_KEYWORDS):
+        return _build_reminder_action(text)
+
+    if any(keyword in lowered for keyword in _LIST_EVENTS_KEYWORDS):
+        return Action(intent="list_events", payload={"range": "today"})
+
+    if any(keyword in lowered for keyword in _INGEST_KEYWORDS):
+        topic = _extract_topic(text)
+        return Action(intent="ingest_docs", payload={"topic": topic})
+
+    if any(keyword in lowered for keyword in _SUMMARY_KEYWORDS):
+        topic = _extract_topic(text)
+        return Action(intent="summarize_topic", payload={"topic": topic})
+
+    if any(keyword in lowered for keyword in _ADVISE_KEYWORDS):
+        topic = _extract_topic(text)
+        return Action(intent="advise_on_topic", payload={"topic": topic})
+
+    if any(keyword in lowered for keyword in _LIST_TASKS_KEYWORDS):
+        return Action(intent="list_tasks", payload={"scope": "today"})
+
+    if any(keyword in lowered for keyword in _UPDATE_KEYWORDS):
+        entity_id = _extract_number(lowered)
+        if "etkin" in lowered or "toplant" in lowered:
+            return Action(intent="update_event", payload={"event_id": entity_id or 0, "text": text})
+        return Action(intent="update_task", payload={"task_id": entity_id or 0, "text": text})
+
+    if any(keyword in lowered for keyword in _DELETE_KEYWORDS):
+        entity_id = _extract_number(lowered)
+        if "etkin" in lowered or "toplant" in lowered:
+            return Action(intent="delete_event", payload={"event_id": entity_id or 0})
+        return Action(intent="delete_task", payload={"task_id": entity_id or 0})
+
+    if any(keyword in lowered for keyword in _COMPLETE_KEYWORDS):
+        entity_id = _extract_number(lowered)
+        return Action(intent="complete_task", payload={"task_id": entity_id or 0})
+
+    if any(keyword in lowered for keyword in _TASK_KEYWORDS):
+        return _build_task_action(text)
+
+    return Action(intent="note", payload={"text": text})
+
+
+def _build_event_action(text: str, default_hour: int) -> Action:
+    title = _infer_title(text) or _TITLE_FALLBACK
+    local_dt = parse_datetime(text, default_hour=default_hour)
+    payload: Dict[str, Any] = {"title": title}
+    if local_dt is not None:
+        payload["start"] = to_utc(local_dt).isoformat()
+        payload["timezone"] = settings.timezone_name
+    payload["remind_policy"] = {"minutes_before": settings.default_reminders, "voice": True}
+    return Action(intent="add_event", payload=payload)
+
+
+def _build_task_action(text: str) -> Action:
+    due_local = parse_datetime(text, default_hour=17)
+    payload: Dict[str, Any] = {"title": text.strip() or _TITLE_FALLBACK}
+    if due_local is not None:
+        payload["due"] = to_utc(due_local).isoformat()
+    return Action(intent="add_task", payload=payload)
+
+
+def _build_reminder_action(text: str) -> Action:
+    target_dt = parse_datetime(text, default_hour=9)
+    payload: Dict[str, Any] = {"message": text.strip()}
+    if target_dt is not None:
+        payload["remind_at"] = to_utc(target_dt).isoformat()
+    return Action(intent="schedule_reminder", payload=payload)
 
 
 def _extract_topic(text: str) -> str:
     match = re.search(r"([A-ZÇĞİÖŞÜ][\wçğıöşü]+)", text)
     if match:
         return match.group(1)
-    return text.strip()
+    words = text.split()
+    return " ".join(words[-2:]) if len(words) >= 2 else text
 
 
-def _build_event_action(text: str) -> Action:
-    dt_value = parse_datetime(text)
-    payload: Dict[str, object] = {
-        "title": _infer_title(text),
-    }
-    if dt_value:
-        payload["start"] = dt_value.isoformat()
-        payload["timezone"] = dt_value.tzinfo.key if getattr(dt_value.tzinfo, "key", None) else "Europe/Istanbul"
-    else:
-        payload["inferred_time"] = True
-    payload["remind_policy"] = {"minutes_before": [1440, 60, 10], "voice": True}
-    return Action(intent="add_event", payload=payload)
+def _extract_number(text: str) -> Optional[int]:
+    match = re.search(r"(\d+)", text)
+    if match:
+        return int(match.group(1))
+    return None
 
 
 def _infer_title(text: str) -> str:
-    lowered = text.lower()
-    for keyword in EVENT_DEFAULT_HOUR:
-        if keyword in lowered:
-            return " ".join(part.capitalize() for part in keyword.split())
-    return text.title()
+    stripped = text.strip()
+    if not stripped:
+        return _TITLE_FALLBACK
+    words = stripped.split()
+    return " ".join(word.capitalize() for word in words[:6])
 
 
-__all__ = ["Action", "detect_intent"]
+def detect_intent(text: str) -> Optional[Action]:
+    """Backward compatible alias for :func:`handle`."""
+
+    return handle(text)
+
+
+__all__ = ["Action", "ActionJSON", "handle", "detect_intent"]

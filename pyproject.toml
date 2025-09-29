@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mira-assistant"
+version = "0.1.0"
+description = "Offline-first personal assistant for Windows"
+readme = "README.md"
+authors = [{name = "Murat", email = "murat@example.com"}]
+requires-python = ">=3.11"
+dependencies = [
+  "apscheduler",
+  "chromadb",
+  "dateparser",
+  "fastapi",
+  "pypdf",
+  "rich",
+  "sqlmodel",
+  "typer",
+  "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+mira-assistant = "app:main"

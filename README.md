@@ -19,6 +19,10 @@ py -3.11 -m venv venv
 pip install -r requirements.txt
 ```
 
+> [!IMPORTANT]
+> Python 3.13 henüz desteklenmiyor. Bazı yerel bağımlılıklar (örn. PyAV) bu sürüm için tekerlek
+> yayınlamadığından `pip install` sürecinde derleme hataları oluşur. Python 3.11 veya 3.12 kullanın.
+
 Windows bildirimleri için isteğe bağlı olarak `win10toast` kütüphanesini ayrıca yükleyebilirsiniz. Bu bağımlılık artık kurulumun
 zorunlu bir parçası değildir; yüklenmediği durumda uygulama bildirim mesajlarını yalnızca günlük kayıtlarına yazar.
 

@@ -59,6 +59,24 @@ def test_speech_style_event_command_is_listed():
     assert any(event["id"] == result.data["event_id"] for event in events)
 
 
+def test_upcoming_range_lists_future_events():
+    dispatcher_module = __import__("mira_assistant.core.actions", fromlist=["ActionDispatcher"])
+    intent_module = __import__("mira_assistant.core.intent", fromlist=["Action"])
+    dispatcher = dispatcher_module.ActionDispatcher()
+
+    far_future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=21)
+    add_action = intent_module.Action(
+        intent="add_event", payload={"title": "Uzak toplantı", "start": far_future.isoformat()}
+    )
+    result = dispatcher.run(add_action)
+    assert result.data["event_id"] is not None
+
+    upcoming_action = intent_module.Action(intent="list_events", payload={"range": "upcoming"})
+    events = dispatcher.run(upcoming_action).data["events"]
+
+    assert any(event["id"] == result.data["event_id"] for event in events)
+
+
 def test_ingest_document_moves_and_summarises(tmp_path):
     get_app()  # ensure directories initialised
     ingestor_module = __import__("mira_assistant.io.ingest", fromlist=["DocumentIngestor"])

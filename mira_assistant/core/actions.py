@@ -126,7 +126,19 @@ class ActionDispatcher:
 
     def handle_list_events(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         now = dt.datetime.now(dt.timezone.utc)
-        end = now + dt.timedelta(days=7)
+        range_hint = str(payload.get("range") or "week").lower()
+
+        if isinstance(payload.get("range"), (int, float)):
+            # Allow callers to provide explicit day offsets.
+            end = now + dt.timedelta(days=float(payload["range"]))
+        elif range_hint in {"today", "bugun", "bugün"}:
+            end = now + dt.timedelta(days=1)
+        elif range_hint in {"month", "upcoming", "30d"}:
+            end = now + dt.timedelta(days=30)
+        elif range_hint in {"all", "future"}:
+            end = now + dt.timedelta(days=365)
+        else:  # default to a 7 day window
+            end = now + dt.timedelta(days=7)
         with get_session() as session:
             events = list_events_between(session, now, end)
         return {

@@ -42,6 +42,23 @@ def test_add_event_schedules_reminders(monkeypatch):
     assert "toplant" in events[0].title.lower()
 
 
+def test_speech_style_event_command_is_listed():
+    intent_module = __import__("mira_assistant.core.intent", fromlist=["handle", "Action"])
+    dispatcher_module = __import__("mira_assistant.core.actions", fromlist=["ActionDispatcher"])
+
+    action = intent_module.handle("yarın saat 10'da toplantı var")
+    assert action is not None and action.intent == "add_event"
+
+    dispatcher = dispatcher_module.ActionDispatcher()
+    result = dispatcher.run(action)
+    assert result.data["event_id"] is not None
+
+    list_action = intent_module.Action(intent="list_events", payload={"range": "week"})
+    events = dispatcher.run(list_action).data["events"]
+
+    assert any(event["id"] == result.data["event_id"] for event in events)
+
+
 def test_ingest_document_moves_and_summarises(tmp_path):
     get_app()  # ensure directories initialised
     ingestor_module = __import__("mira_assistant.io.ingest", fromlist=["DocumentIngestor"])

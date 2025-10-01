@@ -484,7 +484,7 @@ class MainWindow(QMainWindow):
             checkbox = QCheckBox()
             checkbox.setCursor(Qt.PointingHandCursor)
             status = task.get("status", "pending")
-            checkbox.setChecked(status == "completed")
+            checkbox.setChecked(status == "done")
             checkbox.stateChanged.connect(
                 lambda state, task_id=task.get("id"): self._on_task_checkbox_changed(task_id, state == Qt.Checked)
             )
@@ -502,7 +502,7 @@ class MainWindow(QMainWindow):
             self.todo_table.setItem(row, 2, QTableWidgetItem(due_text))
 
             status_item = QTableWidgetItem(status.capitalize())
-            if status == "completed":
+            if status == "done":
                 status_item.setForeground(QColor("#4CAF50"))
             else:
                 status_item.setForeground(QColor("#F44336"))
@@ -527,10 +527,10 @@ class MainWindow(QMainWindow):
         pending_tasks = 0
         for task in self._tasks:
             status = task.get("status")
-            if status != "completed":
+            if status != "done":
                 pending_tasks += 1
             due = self._parse_iso(task.get("due_dt"))
-            if due and due.date() == today and status != "completed":
+            if due and due.date() == today and status != "done":
                 today_tasks += 1
 
         week_events = len(self._events)

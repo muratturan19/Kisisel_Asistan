@@ -5,6 +5,7 @@ import datetime as dt
 import logging
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 
@@ -100,6 +101,23 @@ class ReminderScheduler:
 
     def list_jobs(self) -> List[str]:
         return [job.id for job in self._scheduler.get_jobs()]
+
+    def cancel_event_reminders(self, event_id: int) -> int:
+        """Remove all scheduled reminder jobs for the given event."""
+
+        prefix = f"event-{event_id}-"
+        removed = 0
+        for job in list(self._scheduler.get_jobs()):
+            job_id = job.id
+            if job_id and job_id.startswith(prefix):
+                try:
+                    self._scheduler.remove_job(job_id)
+                except JobLookupError:
+                    LOGGER.debug("Reminder job %s already removed", job_id)
+                else:
+                    removed += 1
+                    LOGGER.debug("Cancelled reminder job %s", job_id)
+        return removed
 
     def _emit(self, event_payload: Dict[str, Any], minutes: int) -> None:
         message = f"{event_payload.get('title', 'Etkinlik')} {minutes} dk sonra başlıyor"

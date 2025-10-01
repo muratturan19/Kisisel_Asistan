@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def refresh_events(self) -> None:
-        action = Action(intent="list_events", payload={"range": "week"})
+        action = Action(intent="list_events", payload={"range": "upcoming"})
         result = self.dispatcher.run(action)
         self._events = result.data.get("events", [])
         self.meetings_table.setRowCount(len(self._events))
@@ -525,6 +525,9 @@ class MainWindow(QMainWindow):
         today = dt.date.today()
         today_tasks = 0
         pending_tasks = 0
+        now_utc = dt.datetime.now(dt.timezone.utc)
+        week_later = now_utc + dt.timedelta(days=7)
+        week_events = 0
         for task in self._tasks:
             status = task.get("status")
             if status != "done":
@@ -533,7 +536,10 @@ class MainWindow(QMainWindow):
             if due and due.date() == today and status != "done":
                 today_tasks += 1
 
-        week_events = len(self._events)
+        for event in self._events:
+            start = self._parse_iso(event.get("start_dt"))
+            if start and now_utc <= start <= week_later:
+                week_events += 1
 
         if label := self._summary_labels.get("today"):
             label.setText(f"{today_tasks} görev")

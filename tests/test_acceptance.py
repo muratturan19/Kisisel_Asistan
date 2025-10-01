@@ -125,3 +125,19 @@ def test_delete_event_clears_reminders():
         assert scheduler.list_jobs() == []
     finally:
         scheduler.shutdown()
+
+
+def test_note_intent_persists_note():
+    app = get_app()
+    service = app.service
+    action_cls = __import__("mira_assistant.core.intent", fromlist=["Action"]).Action
+
+    result = service.handle_action(action_cls(intent="note", payload={"text": "Market listesi: süt ve ekmek"}))
+    assert result["saved"] is True
+    assert result["note_id"] is not None
+
+    storage = get_storage()
+    with storage.get_session() as session:
+        notes = list(session.exec(select(storage.Note)))
+    assert len(notes) == 1
+    assert "Market" in notes[0].title

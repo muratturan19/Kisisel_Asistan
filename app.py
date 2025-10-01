@@ -26,8 +26,10 @@ from mira_assistant.core.storage import (
     Chunk,
     Document,
     Event,
+    Note,
     Task,
     add_event,
+    add_note,
     get_session,
     init_db,
     list_due_tasks,
@@ -95,6 +97,22 @@ class AssistantService:
         with get_session() as session:
             task = upsert_task(session, task)
         return {"task_id": task.id}
+
+    def handle_note(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"saved": False, "note_id": None}
+
+        title = payload.get("title")
+        if not title:
+            first_line = text.splitlines()[0].strip()
+            title = first_line or "Not"
+        title = title[:80]
+
+        note = Note(title=title, content=text)
+        with get_session() as session:
+            note = add_note(session, note)
+        return {"saved": True, "note_id": note.id}
 
     def handle_list_tasks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         scope = payload.get("scope", "today")

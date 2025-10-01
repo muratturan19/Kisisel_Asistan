@@ -95,10 +95,15 @@ class DocumentIngestor:
             for chunk in chunks:
                 session.add(chunk)
             session.commit()
-        metadata = [{"doc_id": str(document.id), "topic": topic} for _ in chunk_texts]
-        ids = [f"doc-{document.id}-chunk-{idx}" for idx in range(len(chunk_texts))]
+            if hasattr(Document, "model_validate"):
+                document_snapshot = Document.model_validate(document, from_attributes=True)  # type: ignore[attr-defined]
+            else:  # pragma: no cover - legacy pydantic v1 fallback
+                document_snapshot = Document.from_orm(document)  # type: ignore[attr-defined]
+        document_id = document_snapshot.id
+        metadata = [{"doc_id": str(document_id), "topic": topic} for _ in chunk_texts]
+        ids = [f"doc-{document_id}-chunk-{idx}" for idx in range(len(chunk_texts))]
         self.vector_store.add_embeddings(embeddings.tolist(), metadatas=metadata, ids=ids, documents=chunk_texts)
-        return IngestResult(document=document, chunk_texts=chunk_texts, summary=summary)
+        return IngestResult(document=document_snapshot, chunk_texts=chunk_texts, summary=summary)
 
     def _load_model(self):  # type: ignore[no-untyped-def]
         if self._model is None:
@@ -110,9 +115,29 @@ class DocumentIngestor:
     def _embed(self, texts: Sequence[str]) -> np.ndarray:
         if not texts:
             return np.zeros((0, 384), dtype=np.float32)
+        if settings.offline_only:
+            return self._offline_embed(texts)
         model = self._load_model()
         embeddings = model.encode(list(texts), show_progress_bar=False, normalize_embeddings=True)
         return np.asarray(embeddings, dtype=np.float32)
+
+    def _offline_embed(self, texts: Sequence[str]) -> np.ndarray:
+        """Generate deterministic embeddings without external dependencies."""
+
+        dim = 384
+        vectors = np.zeros((len(texts), dim), dtype=np.float32)
+        for row, text in enumerate(texts):
+            if not text:
+                continue
+            tokens = text.lower().split()
+            for token in tokens:
+                digest = hashlib.sha256(token.encode("utf-8")).digest()
+                index = int.from_bytes(digest[:4], "little") % dim
+                vectors[row, index] += 1.0
+            norm = np.linalg.norm(vectors[row])
+            if norm:
+                vectors[row] /= norm
+        return vectors
 
 
 def infer_topic_from_filename(filename: str) -> str:

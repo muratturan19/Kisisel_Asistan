@@ -14,9 +14,11 @@ from .storage import (
     Chunk,
     Document,
     Event,
+    Note,
     Task,
     TaskStatus,
     add_event,
+    add_note,
     complete_task,
     delete_event,
     get_session,
@@ -105,6 +107,22 @@ class ActionDispatcher:
         if deleted:
             self.scheduler.cancel_event_reminders(event_id)
         return {"deleted": deleted}
+
+    def handle_note(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"saved": False, "note_id": None}
+
+        title = payload.get("title")
+        if not title:
+            first_line = text.splitlines()[0].strip()
+            title = first_line or "Not"
+        title = title[:80]
+
+        note = Note(title=title, content=text)
+        with get_session() as session:
+            note = add_note(session, note)
+        return {"saved": True, "note_id": note.id}
 
     def handle_list_events(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         now = dt.datetime.now(dt.timezone.utc)

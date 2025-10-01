@@ -59,6 +59,33 @@ def test_speech_style_event_command_is_listed():
     assert any(event["id"] == result.data["event_id"] for event in events)
 
 
+def test_add_command_with_time_creates_event():
+    intent_module = __import__("mira_assistant.core.intent", fromlist=["handle", "Action"])
+    dispatcher_module = __import__("mira_assistant.core.actions", fromlist=["ActionDispatcher"])
+
+    action = intent_module.handle("Yarın saat 16:00'da rapor teslimi ekle")
+    assert action is not None and action.intent == "add_event"
+
+    dispatcher = dispatcher_module.ActionDispatcher()
+    result = dispatcher.run(action)
+    assert result.data["event_id"] is not None
+
+    upcoming_action = intent_module.Action(intent="list_events", payload={"range": "upcoming"})
+    events = dispatcher.run(upcoming_action).data["events"]
+
+    assert any(event["id"] == result.data["event_id"] for event in events)
+
+
+def test_ingest_requires_document_context():
+    intent_module = __import__("mira_assistant.core.intent", fromlist=["handle"])
+
+    ingest_action = intent_module.handle("Belgeleri ekle")
+    assert ingest_action is not None and ingest_action.intent == "ingest_docs"
+
+    task_action = intent_module.handle("Yeni görev ekle")
+    assert task_action is not None and task_action.intent == "add_task"
+
+
 def test_upcoming_range_lists_future_events():
     dispatcher_module = __import__("mira_assistant.core.actions", fromlist=["ActionDispatcher"])
     intent_module = __import__("mira_assistant.core.intent", fromlist=["Action"])

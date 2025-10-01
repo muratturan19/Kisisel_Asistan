@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 from .parser_tr import parse_datetime, to_utc
 from config import settings
@@ -35,12 +36,15 @@ _TASK_KEYWORDS = ["yap", "görev", "task", "hatırla", "tamamla"]
 _LIST_EVENTS_KEYWORDS = ["ajanda", "takvim", "etkinlikler", "bugün"]
 _LIST_TASKS_KEYWORDS = ["görevleri", "yapılacak", "todo", "liste"]
 _SUMMARY_KEYWORDS = ["özet", "toparla"]
-_INGEST_KEYWORDS = ["yükle", "ekle", "arşivle"]
+_INGEST_NOUN_HINTS = {"belge", "belgeleri", "dosya", "dosyaları", "dokuman", "doküman"}
+_INGEST_VERB_HINTS = {"yükle", "ekle", "aktar", "arşivle"}
 _ADVISE_KEYWORDS = ["öner", "uyarı", "kontrol"]
 _REMINDER_KEYWORDS = ["hatırlat", "alarm"]
 _UPDATE_KEYWORDS = ["güncelle", "değiştir"]
 _DELETE_KEYWORDS = ["sil", "iptal"]
 _COMPLETE_KEYWORDS = ["tamamla", "bitir", "kapattım"]
+
+_ADD_HINTS = {"ekle", "oluştur", "kaydet"}
 
 _TITLE_FALLBACK = "Mira Notu"
 
@@ -62,7 +66,7 @@ def handle(text: str) -> Optional[Action]:
     if any(keyword in lowered for keyword in _LIST_EVENTS_KEYWORDS):
         return Action(intent="list_events", payload={"range": "today"})
 
-    if any(keyword in lowered for keyword in _INGEST_KEYWORDS):
+    if _looks_like_ingest_command(lowered):
         topic = _extract_topic(text)
         return Action(intent="ingest_docs", payload={"topic": topic})
 
@@ -76,6 +80,12 @@ def handle(text: str) -> Optional[Action]:
 
     if any(keyword in lowered for keyword in _LIST_TASKS_KEYWORDS):
         return Action(intent="list_tasks", payload={"scope": "today"})
+
+    if _looks_like_add_command(lowered):
+        parsed_dt = parse_datetime(text, default_hour=18)
+        if parsed_dt is not None:
+            return _build_event_action(text, default_hour=18, parsed=parsed_dt)
+        return _build_task_action(text)
 
     if any(keyword in lowered for keyword in _UPDATE_KEYWORDS):
         entity_id = _extract_number(lowered)
@@ -99,9 +109,9 @@ def handle(text: str) -> Optional[Action]:
     return Action(intent="note", payload={"text": text})
 
 
-def _build_event_action(text: str, default_hour: int) -> Action:
+def _build_event_action(text: str, default_hour: int, *, parsed: Optional[dt.datetime] = None) -> Action:
     title = _infer_title(text) or _TITLE_FALLBACK
-    local_dt = parse_datetime(text, default_hour=default_hour)
+    local_dt = parsed if parsed is not None else parse_datetime(text, default_hour=default_hour)
     payload: Dict[str, Any] = {"title": title}
     if local_dt is not None:
         payload["start"] = to_utc(local_dt).isoformat()
@@ -147,6 +157,18 @@ def _infer_title(text: str) -> str:
         return _TITLE_FALLBACK
     words = stripped.split()
     return " ".join(word.capitalize() for word in words[:6])
+
+
+def _looks_like_ingest_command(text: str) -> bool:
+    return _contains_any(text, _INGEST_NOUN_HINTS) and _contains_any(text, _INGEST_VERB_HINTS)
+
+
+def _looks_like_add_command(text: str) -> bool:
+    return _contains_any(text, _ADD_HINTS)
+
+
+def _contains_any(text: str, keywords: Iterable[str]) -> bool:
+    return any(keyword in text for keyword in keywords)
 
 
 def detect_intent(text: str) -> Optional[Action]:

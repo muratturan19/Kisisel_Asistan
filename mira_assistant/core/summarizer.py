@@ -11,12 +11,13 @@ def generate_summary(topic: str, chunks: Sequence[str], meeting_notes: Sequence[
 
     bullet_points = _collect_sentences(chunks, limit=8)
     meeting_highlights = _collect_sentences(meeting_notes or [], limit=3)
-    summary = textwrap.dedent(
+    overview = _format_bullets(bullet_points, fallback="İlgili içerik bulunamadı.")
+    summary_body = textwrap.dedent(
         f"""
         # {topic} Özeti
 
         ## Özet
-        { _format_bullets(bullet_points, fallback="İlgili içerik bulunamadı.") }
+        { overview }
 
         ## Kararlar
         { _format_bullets(meeting_highlights, fallback="Paylaşılan karar yok.") }
@@ -31,6 +32,7 @@ def generate_summary(topic: str, chunks: Sequence[str], meeting_notes: Sequence[
         { _format_bullets([], fallback="Takip gerektiren soru yok.") }
         """
     ).strip()
+    summary = "\n\n".join([overview, summary_body]).strip()
     return "\n".join(line.rstrip() for line in summary.splitlines())
 
 

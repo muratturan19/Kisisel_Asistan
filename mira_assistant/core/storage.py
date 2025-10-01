@@ -96,6 +96,15 @@ class Meeting(SQLModel, table=True):
     created_at: dt.datetime = Field(default_factory=_utcnow, sa_column=Column(DateTime(timezone=True)))
 
 
+class Note(SQLModel, table=True):
+    """Simple free-form note persisted for later reference."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
+    content: str
+    created_at: dt.datetime = Field(default_factory=_utcnow, sa_column=Column(DateTime(timezone=True)))
+
+
 _engine = None
 
 
@@ -133,6 +142,13 @@ def add_event(session: Session, event: Event) -> Event:
     session.commit()
     session.refresh(event)
     return event
+
+
+def add_note(session: Session, note: Note) -> Note:
+    session.add(note)
+    session.commit()
+    session.refresh(note)
+    return note
 
 
 def update_event(session: Session, event_id: int, updates: Dict[str, Any]) -> Optional[Event]:
@@ -221,9 +237,11 @@ __all__ = [
     "Chunk",
     "Knowledge",
     "Meeting",
+    "Note",
     "init_db",
     "get_session",
     "add_event",
+    "add_note",
     "update_event",
     "delete_event",
     "upsert_task",

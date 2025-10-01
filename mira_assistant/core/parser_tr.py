@@ -6,6 +6,7 @@ import re
 from typing import Optional
 
 import dateparser
+from dateparser.search import search_dates
 
 from config import settings
 
@@ -19,6 +20,16 @@ DEFAULT_SETTINGS = {
 }
 
 _TIME_PATTERN = re.compile(r"(\d{1,2}[:. ]\d{2})|(saat\s*\d{1,2})", re.IGNORECASE)
+_APOSTROPHE_PATTERN = re.compile(r"(\d+)'([a-zçğıöşü]+)", re.IGNORECASE)
+
+
+def _normalise_text(text: str) -> str:
+    """Normalise common Turkish apostrophe usage for time phrases."""
+
+    # Convert "10'da" -> "10 da" and ensure remaining apostrophes become spaces
+    text = _APOSTROPHE_PATTERN.sub(r"\1 \2", text)
+    text = text.replace("'", " ")
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def parse_datetime(
@@ -30,12 +41,23 @@ def parse_datetime(
 ) -> Optional[dt.datetime]:
     """Parse a Turkish datetime expression and return a timezone aware value."""
 
+    normalised = _normalise_text(text)
+
     settings_dict = DEFAULT_SETTINGS.copy()
     if reference is not None:
         settings_dict["RELATIVE_BASE"] = reference
-    parsed = dateparser.parse(text, languages=["tr"], settings=settings_dict)
+    parsed = dateparser.parse(normalised, languages=["tr"], settings=settings_dict)
     if not isinstance(parsed, dt.datetime):
-        return None
+        # dateparser struggles with longer natural language phrases such as
+        # "yarın saat 10'da toplantı var" and returns ``None``. When this
+        # happens we fallback to ``search_dates`` which scans the string for
+        # fragments that look like a datetime expression. The first match is
+        # used as the parsed value.
+        matches = search_dates(normalised, languages=["tr"], settings=settings_dict) or []
+        if matches:
+            parsed = matches[0][1]
+        else:
+            return None
     if default_hour is not None and not _has_explicit_time(text):
         parsed = parsed.replace(hour=default_hour, minute=default_minute, second=0, microsecond=0)
     if parsed.tzinfo is None:

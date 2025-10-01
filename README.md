@@ -14,20 +14,25 @@ Windows odaklı, Türkçe destekli kişisel asistanın masaüstü MVP sürümü.
 ## Kurulum
 
 ```powershell
-py -3.11 -m venv venv
+py -3.13 -m venv venv
 ./venv/Scripts/Activate.ps1
 pip install -r requirements.txt
 ```
 
-> [!IMPORTANT]
-> Python 3.13 henüz desteklenmiyor. Bazı yerel bağımlılıklar (örn. PyAV) bu sürüm için tekerlek
-> yayınlamadığından `pip install` sürecinde derleme hataları oluşur. Python 3.11 veya 3.12 kullanın.
+> [!TIP]
+> Bağımlılıklar artık Python 3.13 uyumluluğu gözetilerek sabitlendi. Farklı bir sürümde kurulum
+> yaparken hata alırsanız `scripts/check_dependency_updates.py` betiği ile hangi paketin güncel
+> sürüme ihtiyaç duyduğunu görebilirsiniz.
 
 Windows bildirimleri için isteğe bağlı olarak `win10toast` kütüphanesini ayrıca yükleyebilirsiniz. Bu bağımlılık artık kurulumun
 zorunlu bir parçası değildir; yüklenmediği durumda uygulama bildirim mesajlarını yalnızca günlük kayıtlarına yazar.
 
 Kurulum sırasında bir paket kaynaklı hata alırsanız `scripts/check_requirements.ps1` betiğiyle hangi bağımlılığın sorun çıkardığını
-tespit edebilirsiniz:
+tespit edebilir veya sürüm güncelliğini görmek için şu Python betiğini kullanabilirsiniz:
+
+```powershell
+python .\scripts\check_dependency_updates.py
+```
 
 ```powershell
 pwsh ./scripts/check_requirements.ps1

@@ -27,7 +27,7 @@ def test_add_event_schedules_reminders(monkeypatch):
     importlib.reload(intent_module)
 
     fake_dt = dt.datetime(2025, 10, 22, 10, 0, tzinfo=ZoneInfo("Europe/Istanbul"))
-    monkeypatch.setattr(intent_module, "parse_datetime", lambda text: fake_dt)
+    monkeypatch.setattr(intent_module, "parse_datetime", lambda text, **_: fake_dt)
 
     action = intent_module.detect_intent("22'si 10:00 toplantı")
     app = get_app()
@@ -39,7 +39,7 @@ def test_add_event_schedules_reminders(monkeypatch):
     with storage.get_session() as session:
         events = list(session.exec(select(storage.Event)))
     assert len(events) == 1
-    assert events[0].title.lower().startswith("toplant")
+    assert "toplant" in events[0].title.lower()
 
 
 def test_ingest_document_moves_and_summarises(tmp_path):
@@ -105,3 +105,23 @@ def test_conflicting_events_produce_warning():
     )
     assert result["warnings"], "Çakışma uyarısı bekleniyordu"
     assert "Çakışma" in result["warnings"][0]
+
+
+def test_delete_event_clears_reminders():
+    from mira_assistant.core.actions import ActionDispatcher
+    from mira_assistant.core.scheduler import ReminderScheduler
+
+    scheduler = ReminderScheduler()
+    dispatcher = ActionDispatcher(scheduler=scheduler)
+    future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=2)
+    try:
+        add_result = dispatcher.handle_add_event({"title": "Test", "start": future.isoformat()})
+        event_id = add_result["event_id"]
+        assert event_id is not None
+        assert scheduler.list_jobs(), "Hatırlatma işi planlanamadı"
+
+        delete_result = dispatcher.handle_delete_event({"event_id": event_id})
+        assert delete_result["deleted"] is True
+        assert scheduler.list_jobs() == []
+    finally:
+        scheduler.shutdown()

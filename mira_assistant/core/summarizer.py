@@ -34,6 +34,12 @@ def generate_summary(topic: str, chunks: Sequence[str], meeting_notes: Sequence[
     return "\n".join(line.rstrip() for line in summary.splitlines())
 
 
+def summarise_topic(chunks: Sequence[str], topic: str = "Genel", meeting_notes: Sequence[str] | None = None) -> str:
+    """Backward compatible wrapper returning a summary for a topic."""
+
+    return generate_summary(topic, chunks, meeting_notes)
+
+
 def _collect_sentences(texts: Iterable[str], *, limit: int) -> List[str]:
     sentences: List[str] = []
     for text in texts:
@@ -68,4 +74,4 @@ def _infer_risks(sentences: Sequence[str]) -> List[str]:
     return risks
 
 
-__all__ = ["generate_summary"]
+__all__ = ["generate_summary", "summarise_topic"]

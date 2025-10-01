@@ -90,6 +90,7 @@ class ActionDispatcher:
             session.add(event)
             session.commit()
             session.refresh(event)
+        self.scheduler.cancel_event_reminders(event_id)
         self.scheduler.schedule_event_reminders(event, event.remind_policy)
         if hasattr(event, "model_dump"):
             payload = event.model_dump()  # type: ignore[attr-defined]
@@ -101,6 +102,8 @@ class ActionDispatcher:
         event_id = int(payload.get("event_id", 0))
         with get_session() as session:
             deleted = delete_event(session, event_id)
+        if deleted:
+            self.scheduler.cancel_event_reminders(event_id)
         return {"deleted": deleted}
 
     def handle_list_events(self, payload: Dict[str, Any]) -> Dict[str, Any]:

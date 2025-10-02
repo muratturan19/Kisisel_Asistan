@@ -67,17 +67,22 @@ class AssistantService:
 
     def handle_add_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         self.start_scheduler()
-        start_str = payload.get("start")
+        start_str = (
+            payload.get("start")
+            or payload.get("date_time")
+            or payload.get("start_dt")
+            or payload.get("datetime")
+        )
         if not start_str:
             raise ValueError("Event start time missing")
         start_dt = dt.datetime.fromisoformat(start_str)
         if start_dt.tzinfo is None:
             start_dt = start_dt.replace(tzinfo=dt.timezone.utc)
         event = Event(
-            title=payload.get("title", "Etkinlik"),
+            title=payload.get("title") or payload.get("event") or payload.get("name") or "Etkinlik",
             start_dt=start_dt,
             end_dt=payload.get("end_dt"),
-            location=payload.get("location"),
+            location=payload.get("location") or payload.get("place"),
             remind_policy=payload.get("remind_policy"),
             notes=payload.get("notes"),
         )
@@ -99,11 +104,16 @@ class AssistantService:
         return {"task_id": task.id}
 
     def handle_note(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        text = str(payload.get("text") or "").strip()
+        text = str(
+            payload.get("text")
+            or payload.get("message")
+            or payload.get("content")
+            or ""
+        ).strip()
         if not text:
             return {"saved": False, "note_id": None}
 
-        title = payload.get("title")
+        title = payload.get("title") or payload.get("subject")
         if not title:
             first_line = text.splitlines()[0].strip()
             title = first_line or "Not"

@@ -13,10 +13,23 @@ from mira_assistant.core.storage import Event, get_session, init_db
 from mira_assistant.ui.main_window import MainWindow
 from mira_assistant.ui.tray import TrayController
 
+if hasattr(sys.stdout, "reconfigure"):
+    # Ensure console logging never crashes on characters that the active code
+    # page cannot represent (e.g. combining Turkish dotted i variants).
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except TypeError:
+        # Some platforms expose ``reconfigure`` but do not accept the ``errors``
+        # keyword – ignore silently and keep the default behaviour.
+        pass
+
+stream_handler = logging.StreamHandler(sys.stdout)
+file_handler = logging.FileHandler(str(settings.log_dir / "mira.log"), encoding="utf-8")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
-    handlers=[logging.FileHandler(str(settings.log_dir / "mira.log")), logging.StreamHandler(sys.stdout)],
+    handlers=[file_handler, stream_handler],
 )
 
 LOGGER = logging.getLogger(__name__)

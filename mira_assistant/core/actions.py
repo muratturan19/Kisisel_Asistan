@@ -67,13 +67,30 @@ class ActionDispatcher:
 
     # Event handlers
     def handle_add_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        start = _parse_iso(payload.get("start"))
-        end = _parse_iso(payload.get("end"))
+        """Persist a new calendar event.
+
+        Recent LLM responses occasionally return non-standard field names such as
+        ``date_time`` for the start timestamp or ``event`` for the title.  Accept
+        these aliases so that the command still succeeds instead of silently
+        falling back to placeholders or the current time.
+        """
+
+        start_value = (
+            payload.get("start")
+            or payload.get("date_time")
+            or payload.get("start_dt")
+            or payload.get("datetime")
+        )
+        end_value = payload.get("end") or payload.get("end_dt") or payload.get("end_time")
+        title = payload.get("title") or payload.get("event") or payload.get("name")
+
+        start = _parse_iso(start_value)
+        end = _parse_iso(end_value)
         event = Event(
-            title=payload.get("title", "Etkinlik"),
+            title=(title or "Etkinlik"),
             start_dt=start or dt.datetime.now(dt.timezone.utc),
             end_dt=end,
-            location=payload.get("location"),
+            location=payload.get("location") or payload.get("place"),
             remind_policy=payload.get("remind_policy"),
             participants=payload.get("participants"),
             link=payload.get("link"),
@@ -133,11 +150,16 @@ class ActionDispatcher:
         return {"deleted": deleted}
 
     def handle_note(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        text = str(payload.get("text") or "").strip()
+        text = str(
+            payload.get("text")
+            or payload.get("message")
+            or payload.get("content")
+            or ""
+        ).strip()
         if not text:
             return {"saved": False, "note_id": None}
 
-        title = payload.get("title")
+        title = payload.get("title") or payload.get("subject")
         if not title:
             first_line = text.splitlines()[0].strip()
             title = first_line or "Not"

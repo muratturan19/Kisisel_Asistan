@@ -86,9 +86,47 @@ class ActionDispatcher:
 
         start = _parse_iso(start_value)
         end = _parse_iso(end_value)
+        normalized_title = (title or "Etkinlik").strip() or "Etkinlik"
+        normalized_key = normalized_title.casefold()
+        start_dt = start or dt.datetime.now(dt.timezone.utc)
+
+        with get_session() as session:
+            if start is not None:
+                window_start = start - dt.timedelta(hours=1)
+                window_end = start + dt.timedelta(hours=1)
+                existing_events = session.exec(
+                    select(Event).where(Event.start_dt >= window_start, Event.start_dt <= window_end)
+                ).all()
+            else:
+                existing_events = session.exec(select(Event)).all()
+            for existing in existing_events:
+                existing_title = (existing.title or "").strip().casefold()
+                if existing_title != normalized_key:
+                    continue
+                if start is None and existing.start_dt is None:
+                    LOGGER.warning("Duplicate event detected without start: %s", normalized_title)
+                    return {
+                        "event_id": existing.id,
+                        "duplicate": True,
+                        "warnings": [],
+                        "jobs": [],
+                        "message": "Bu etkinlik zaten mevcut",
+                    }
+                if start is not None and existing.start_dt is not None:
+                    time_diff = abs((existing.start_dt - start).total_seconds())
+                    if time_diff < 3600:
+                        LOGGER.warning("Duplicate event detected: %s", normalized_title)
+                        return {
+                            "event_id": existing.id,
+                            "duplicate": True,
+                            "warnings": [],
+                            "jobs": [],
+                            "message": "Bu etkinlik zaten mevcut",
+                        }
+
         event = Event(
-            title=(title or "Etkinlik"),
-            start_dt=start or dt.datetime.now(dt.timezone.utc),
+            title=normalized_title,
+            start_dt=start_dt,
             end_dt=end,
             location=payload.get("location") or payload.get("place"),
             remind_policy=payload.get("remind_policy"),
@@ -108,7 +146,7 @@ class ActionDispatcher:
             warnings = detect_conflicts(session, event)
         jobs = self.scheduler.schedule_event_reminders(event, event.remind_policy)
         LOGGER.info("Event saved with id=%s, scheduled jobs=%s", event.id, jobs)
-        return {"event_id": event.id, "warnings": warnings, "jobs": jobs}
+        return {"event_id": event.id, "warnings": warnings, "jobs": jobs, "duplicate": False}
 
     def handle_update_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         event_id = int(payload.get("event_id", 0))
@@ -204,9 +242,36 @@ class ActionDispatcher:
 
     # Task handlers
     def handle_add_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        raw_title = str(payload.get("title", "Görev") or "")
+        title = raw_title.strip() or "Görev"
+        normalized_title = title.casefold()
+        due_dt = _parse_iso(payload.get("due"))
+
+        with get_session() as session:
+            existing_tasks = list_tasks(session, include_completed=False)
+        for existing in existing_tasks:
+            existing_title = (existing.title or "").strip().casefold()
+            if existing_title == normalized_title:
+                if due_dt and existing.due_dt:
+                    time_diff = abs((due_dt - existing.due_dt).total_seconds())
+                    if time_diff < 3600:
+                        LOGGER.warning("Duplicate task detected: %s", title)
+                        return {
+                            "task_id": existing.id,
+                            "duplicate": True,
+                            "message": "Bu görev zaten mevcut",
+                        }
+                if due_dt is None and existing.due_dt is None:
+                    LOGGER.warning("Duplicate task detected without due date: %s", title)
+                    return {
+                        "task_id": existing.id,
+                        "duplicate": True,
+                        "message": "Bu görev zaten mevcut",
+                    }
+
         task = Task(
-            title=payload.get("title", "Görev"),
-            due_dt=_parse_iso(payload.get("due")),
+            title=title or "Görev",
+            due_dt=due_dt,
             priority=payload.get("priority", 0),
             tags=payload.get("tags"),
             notes=payload.get("notes"),
@@ -214,7 +279,7 @@ class ActionDispatcher:
         with get_session() as session:
             task = upsert_task(session, task)
         LOGGER.info("Task saved with id=%s", task.id)
-        return {"task_id": task.id}
+        return {"task_id": task.id, "duplicate": False}
 
     def handle_update_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         task_id = int(payload.get("task_id", 0))

@@ -175,10 +175,14 @@ class MainWindow(QMainWindow):
         self._tasks: list[dict] = []
         self._events: list[dict] = []
         self._updating_tasks_table = False
+        self._tasks_refresh_delay_ms = 500
+        self._tasks_refresh_timer = QTimer(self)
+        self._tasks_refresh_timer.setSingleShot(True)
+        self._tasks_refresh_timer.timeout.connect(self._refresh_tasks_now)
 
         self._build_ui()
         self.apply_light_theme()
-        self.refresh_lists()
+        self.refresh_lists(immediate=True)
 
     def _build_ui(self) -> None:
         central_widget = QWidget()
@@ -464,11 +468,10 @@ class MainWindow(QMainWindow):
         dialog.setText(text or "Özet bulunamadı.")
         dialog.exec()
 
-    @Slot()
-    def refresh_lists(self) -> None:
+    def refresh_lists(self, immediate: bool = False) -> None:
         LOGGER.info("Refreshing events and tasks lists")
         self.refresh_events()
-        self.refresh_tasks()
+        self.refresh_tasks(immediate=immediate)
 
     @Slot()
     def refresh_events(self) -> None:
@@ -497,8 +500,20 @@ class MainWindow(QMainWindow):
 
         self._update_summary_stats()
 
-    @Slot()
-    def refresh_tasks(self) -> None:
+    def refresh_tasks(self, immediate: bool = False) -> None:
+        if immediate:
+            self._refresh_tasks_now()
+            return
+
+        LOGGER.debug(
+            "Scheduling tasks refresh in %d ms", self._tasks_refresh_delay_ms
+        )
+        self._tasks_refresh_timer.start(self._tasks_refresh_delay_ms)
+
+    def _refresh_tasks_now(self) -> None:
+        if self._tasks_refresh_timer.isActive():
+            self._tasks_refresh_timer.stop()
+
         action = Action(intent="list_tasks", payload={"include_completed": False})
         result = self.dispatcher.run(action)
         self._tasks = result.data.get("tasks", [])
@@ -541,7 +556,7 @@ class MainWindow(QMainWindow):
             self._execute_action(action)
         else:
             # Undo is not supported; refresh will redraw the checkbox state.
-            self.refresh_tasks()
+            self.refresh_tasks(immediate=True)
 
     def _show_task_details(self, row: int, column: int) -> None:
         if row < 0 or row >= len(self._tasks) or column == 0:
@@ -907,11 +922,11 @@ class MainWindow(QMainWindow):
         if index == 0:
             self.refresh_events()
         elif index == 1:
-            self.refresh_tasks()
+            self.refresh_tasks(immediate=True)
         elif index == 2:
             self.refresh_events()
         else:
-            self.refresh_lists()
+            self.refresh_lists(immediate=True)
 
     @Slot()
     def quick_note(self) -> None:

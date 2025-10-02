@@ -6,7 +6,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from PySide6.QtCore import QThread, Qt, Signal, Slot, QTimer, QSize
 from PySide6.QtGui import QFont
@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QCheckBox,
     QFrame,
 )
 
@@ -175,6 +174,7 @@ class MainWindow(QMainWindow):
         self._summary_labels: Dict[str, QLabel] = {}
         self._tasks: list[dict] = []
         self._events: list[dict] = []
+        self._updating_tasks_table = False
 
         self._build_ui()
         self.apply_light_theme()
@@ -379,6 +379,10 @@ class MainWindow(QMainWindow):
         self.todo_table.setColumnWidth(2, 160)
         self.todo_table.verticalHeader().setVisible(False)
         self.todo_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.todo_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.todo_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.todo_table.itemChanged.connect(self._on_task_item_changed)
+        self.todo_table.cellDoubleClicked.connect(self._show_task_details)
 
         todo_layout.addWidget(self.todo_table)
         splitter.addWidget(todo_widget)
@@ -403,6 +407,9 @@ class MainWindow(QMainWindow):
         self.meetings_table.setColumnWidth(3, 120)
         self.meetings_table.verticalHeader().setVisible(False)
         self.meetings_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.meetings_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.meetings_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.meetings_table.cellDoubleClicked.connect(self._show_event_details)
 
         meetings_layout.addWidget(self.meetings_table)
         splitter.addWidget(meetings_widget)
@@ -479,8 +486,14 @@ class MainWindow(QMainWindow):
 
             self.meetings_table.setItem(row, 0, QTableWidgetItem(date_text))
             self.meetings_table.setItem(row, 1, QTableWidgetItem(time_text))
-            self.meetings_table.setItem(row, 2, QTableWidgetItem(title))
-            self.meetings_table.setItem(row, 3, QTableWidgetItem(location))
+            title_item = QTableWidgetItem(title)
+            notes = event.get("notes")
+            if notes:
+                title_item.setToolTip(notes)
+            self.meetings_table.setItem(row, 2, title_item)
+            location_item = QTableWidgetItem(location)
+            location_item.setToolTip(location)
+            self.meetings_table.setItem(row, 3, location_item)
 
         self._update_summary_stats()
 
@@ -490,26 +503,22 @@ class MainWindow(QMainWindow):
         result = self.dispatcher.run(action)
         self._tasks = result.data.get("tasks", [])
         LOGGER.info("Loaded %d tasks", len(self._tasks))
+        self._updating_tasks_table = True
         self.todo_table.setRowCount(len(self._tasks))
 
         for row, task in enumerate(self._tasks):
-            checkbox = QCheckBox()
-            checkbox.setCursor(Qt.PointingHandCursor)
             status = task.get("status", "pending")
-            checkbox.setChecked(status == "done")
-            checkbox.stateChanged.connect(
-                lambda state, task_id=task.get("id"): self._on_task_checkbox_changed(task_id, state == Qt.Checked)
-            )
-            checkbox_widget = QWidget()
-            checkbox_layout = QHBoxLayout(checkbox_widget)
-            checkbox_layout.addWidget(checkbox)
-            checkbox_layout.setAlignment(Qt.AlignCenter)
-            checkbox_layout.setContentsMargins(0, 0, 0, 0)
-            self.todo_table.setCellWidget(row, 0, checkbox_widget)
+            checkbox_item = QTableWidgetItem()
+            checkbox_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            checkbox_item.setCheckState(Qt.Checked if status == "done" else Qt.Unchecked)
+            checkbox_item.setData(Qt.UserRole, task.get("id"))
+            self.todo_table.setItem(row, 0, checkbox_item)
 
             title_text = task.get("title") or "-"
             title_item = QTableWidgetItem(title_text)
-            title_item.setToolTip(title_text)
+            note_preview = task.get("notes")
+            if note_preview:
+                title_item.setToolTip(note_preview)
             self.todo_table.setItem(row, 1, title_item)
 
             due_text = self._format_datetime(task.get("due_dt"))
@@ -517,17 +526,76 @@ class MainWindow(QMainWindow):
             due_item.setTextAlignment(Qt.AlignCenter)
             self.todo_table.setItem(row, 2, due_item)
 
+        self._updating_tasks_table = False
         self._update_summary_stats()
 
-    def _on_task_checkbox_changed(self, task_id: Optional[int], checked: bool) -> None:
-        if task_id is None:
+    def _on_task_item_changed(self, item: QTableWidgetItem) -> None:
+        if self._updating_tasks_table or item.column() != 0:
             return
+        task_id = item.data(Qt.UserRole)
+        if task_id in (None, ""):
+            return
+        checked = item.checkState() == Qt.Checked
         if checked:
-            action = Action(intent="complete_task", payload={"task_id": task_id})
+            action = Action(intent="complete_task", payload={"task_id": int(task_id)})
             self._execute_action(action)
         else:
-            # undo is not supported, revert checkbox via refresh
+            # Undo is not supported; refresh will redraw the checkbox state.
             self.refresh_tasks()
+
+    def _show_task_details(self, row: int, column: int) -> None:
+        if row < 0 or row >= len(self._tasks) or column == 0:
+            return
+        task = self._tasks[row]
+        status = task.get("status", "todo")
+        status_map = {
+            "todo": "Beklemede",
+            "in_progress": "Devam ediyor",
+            "done": "Tamamlandı",
+        }
+        summary_lines = [
+            f"Başlık: {task.get('title') or '-'}",
+            f"Durum: {status_map.get(status, status)}",
+            f"Son tarih: {self._format_datetime(task.get('due_dt'))}",
+            f"Öncelik: {task.get('priority', 0)}",
+            f"Etiketler: {self._stringify(task.get('tags'))}",
+            f"Oluşturulma: {self._format_datetime(task.get('created_at'))}",
+            f"Güncellenme: {self._format_datetime(task.get('updated_at'))}",
+        ]
+        message = "\n".join(summary_lines)
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Görev Detayları")
+        dialog.setIcon(QMessageBox.Information)
+        dialog.setText(message)
+        notes = task.get("notes")
+        if notes:
+            dialog.setDetailedText(notes)
+        dialog.exec()
+
+    def _show_event_details(self, row: int, _column: int) -> None:
+        if row < 0 or row >= len(self._events):
+            return
+        event = self._events[row]
+        start_text = self._format_datetime(event.get("start_dt"))
+        end_text = self._format_datetime(event.get("end_dt"))
+        summary_lines = [
+            f"Başlık: {event.get('title') or '-'}",
+            f"Başlangıç: {start_text}",
+            f"Bitiş: {end_text}",
+            f"Konum: {event.get('location') or '-'}",
+            f"Katılımcılar: {self._stringify(event.get('participants'))}",
+            f"Bağlantı: {event.get('link') or '-'}",
+            f"Hatırlatıcı: {self._stringify(event.get('remind_policy'))}",
+        ]
+        message = "\n".join(summary_lines)
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Etkinlik Detayları")
+        dialog.setIcon(QMessageBox.Information)
+        dialog.setText(message)
+        notes = event.get("notes")
+        if notes:
+            dialog.setDetailedText(notes)
+        dialog.exec()
 
     def _update_summary_stats(self) -> None:
         today = dt.date.today()
@@ -562,6 +630,18 @@ class MainWindow(QMainWindow):
             return "-"
         local = parsed.astimezone()
         return local.strftime("%d %b %a %H:%M")
+
+    @staticmethod
+    def _stringify(value: Any) -> str:
+        if value is None:
+            return "-"
+        if isinstance(value, (list, tuple, set)):
+            items = [str(item) for item in value if item is not None]
+            return ", ".join(items) if items else "-"
+        if isinstance(value, dict):
+            pairs = [f"{key}: {val}" for key, val in value.items()]
+            return ", ".join(pairs) if pairs else "-"
+        return str(value)
 
     @staticmethod
     def _parse_iso(value: Optional[str]) -> Optional[dt.datetime]:

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 from sqlmodel import select
 
 from config import settings
-from mira_assistant.core.storage import Event, get_session
+from mira_assistant.core.storage import Event, get_session, init_db
 from mira_assistant.ui.main_window import MainWindow
 from mira_assistant.ui.tray import TrayController
 
@@ -21,6 +21,8 @@ logging.basicConfig(
 
 
 def create_app() -> tuple[QApplication, MainWindow, TrayController]:
+    # Initialize the database (create tables if they don't exist)
+    init_db()
     app = QApplication(sys.argv)
     window = MainWindow()
     scheduler = window.dispatcher.scheduler

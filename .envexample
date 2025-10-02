@@ -1,0 +1,9 @@
+# Example environment configuration for Mira Assistant
+# Copy this file to `.env` and adjust the values for your setup.
+
+# OpenAI API configuration
+OPENAI_API_KEY=sk-your-openai-api-key
+MIRA_LLM_MODEL=gpt-4o-mini
+
+# Optional: set to a different .env path and export MIRA_ENV_FILE
+# MIRA_ENV_FILE=/absolute/path/to/.env

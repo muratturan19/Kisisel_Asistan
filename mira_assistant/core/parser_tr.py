@@ -27,6 +27,58 @@ _TIME_PATTERN = re.compile(
 )
 _DAY_SUFFIX_PATTERN = re.compile(r"\b(\d{1,2})\s*(?:si|sı|inci|ıncı|uncu|üncü|ncı|nci)\b", re.IGNORECASE)
 _APOSTROPHE_PATTERN = re.compile(r"(\d+)'([a-zçğıöşü]+)", re.IGNORECASE)
+_DATE_KEYWORDS = {
+    "yarın",
+    "yarinki",
+    "bugün",
+    "bugun",
+    "dün",
+    "haftaya",
+    "sonraki",
+    "gelecek",
+    "önümüzdeki",
+    "önümüzde",
+    "ertesi",
+}
+_DAY_NAMES = {
+    "pazartesi",
+    "salı",
+    "sali",
+    "çarşamba",
+    "carsamba",
+    "perşembe",
+    "persembe",
+    "cuma",
+    "cumartesi",
+    "pazar",
+}
+_MONTH_NAMES = {
+    "ocak",
+    "şubat",
+    "subat",
+    "mart",
+    "nisan",
+    "mayıs",
+    "mayis",
+    "haziran",
+    "temmuz",
+    "ağustos",
+    "agustos",
+    "eylül",
+    "eylul",
+    "ekim",
+    "kasım",
+    "kasim",
+    "aralık",
+    "aralik",
+}
+_DATE_NUMERIC_PATTERN = re.compile(r"\b\d{1,2}\s*[/.-]\s*\d{1,2}\b")
+_PERIOD_HINTS = {
+    "akşam": "evening",
+    "aksam": "evening",
+    "akşamüstü": "evening",
+    "aksamustu": "evening",
+}
 
 
 def _normalise_text(text: str) -> str:
@@ -63,6 +115,9 @@ def parse_datetime(
                     extracted_hour = None
             except (TypeError, ValueError):
                 extracted_hour = None
+        period_hint = _detect_period_hint(normalised[: time_match.start()].lower())
+        if period_hint == "evening" and extracted_hour is not None and extracted_hour < 12:
+            extracted_hour += 12
 
     date_candidates = []
     if normalised:
@@ -77,9 +132,11 @@ def parse_datetime(
     day_suffix_match = _DAY_SUFFIX_PATTERN.search(normalised)
 
     settings_dict = DEFAULT_SETTINGS.copy()
-    if reference is not None:
-        settings_dict["RELATIVE_BASE"] = reference
+    effective_reference = reference or dt.datetime.now(settings.timezone)
+    settings_dict["RELATIVE_BASE"] = effective_reference
     parsed: Optional[dt.datetime] = None
+    parsed_from_search = False
+    search_match_text = ""
     for candidate in date_candidates:
         parsed = dateparser.parse(candidate, languages=["tr"], settings=settings_dict)
         if isinstance(parsed, dt.datetime):
@@ -93,10 +150,18 @@ def parse_datetime(
         for candidate in date_candidates:
             matches = search_dates(candidate, languages=["tr"], settings=settings_dict) or []
             if matches:
-                parsed = matches[0][1]
+                search_match_text, parsed = matches[0]
+                parsed_from_search = True
                 break
         if not isinstance(parsed, dt.datetime):
             return None
+    if parsed_from_search and not _match_contains_explicit_date(search_match_text):
+        parsed = parsed.replace(
+            year=effective_reference.year,
+            month=effective_reference.month,
+            day=effective_reference.day,
+        )
+
     if day_suffix_match:
         try:
             parsed = parsed.replace(day=int(day_suffix_match.group(1)))
@@ -122,6 +187,29 @@ def to_utc(value: dt.datetime) -> dt.datetime:
 
 def _has_explicit_time(text: str) -> bool:
     return bool(_TIME_PATTERN.search(_normalise_text(text)))
+
+
+def _match_contains_explicit_date(fragment: str) -> bool:
+    lowered = fragment.lower()
+    if _DATE_NUMERIC_PATTERN.search(lowered):
+        return True
+    if any(keyword in lowered for keyword in _DATE_KEYWORDS):
+        return True
+    if any(day in lowered for day in _DAY_NAMES):
+        return True
+    if any(month in lowered for month in _MONTH_NAMES):
+        return True
+    return False
+
+
+def _detect_period_hint(prefix: str) -> Optional[str]:
+    words = prefix.split()
+    if not words:
+        return None
+    for word in reversed(words[-3:]):
+        if word in _PERIOD_HINTS:
+            return _PERIOD_HINTS[word]
+    return None
 
 
 __all__ = ["parse_datetime", "to_utc"]

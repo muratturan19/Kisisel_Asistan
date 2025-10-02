@@ -154,6 +154,7 @@ class ActionDispatcher:
             payload.get("text")
             or payload.get("message")
             or payload.get("content")
+            or payload.get("note")
             or ""
         ).strip()
         if not text:

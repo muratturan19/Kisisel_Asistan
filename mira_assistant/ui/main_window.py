@@ -51,10 +51,15 @@ class SpeechWorker(QThread):
 
     def run(self) -> None:  # pragma: no cover - requires microphone
         try:
+            LOGGER.info("SpeechWorker started listening")
             text = self._transcriber.listen_and_transcribe()
             if text:
+                LOGGER.info("SpeechWorker transcribed text: %s", text)
                 self.transcribed.emit(text)
+            else:
+                LOGGER.info("SpeechWorker completed without detecting speech")
         except Exception as exc:  # pragma: no cover - requires microphone
+            LOGGER.exception("SpeechWorker failed: %s", exc)
             self.failed.emit(str(exc))
 
 
@@ -406,10 +411,12 @@ class MainWindow(QMainWindow):
     @Slot()
     def handle_save_command(self) -> None:
         command_text = self.command_input.toPlainText().strip()
+        LOGGER.info("handle_save_command called with text: %s", command_text)
         if not command_text:
             self.feedback_label.show_error("Lütfen bir komut girin!")
             return
         action = handle(command_text)
+        LOGGER.info("Detected action from text: %s", action)
         if action is None:
             self.feedback_label.show_error("Komut anlaşılamadı.")
             return
@@ -418,7 +425,9 @@ class MainWindow(QMainWindow):
 
     def _execute_action(self, action: Optional[Action]) -> None:
         if action is None:
+            LOGGER.info("_execute_action called with no action")
             return
+        LOGGER.info("Executing action %s with payload %s", action.intent, action.payload)
         try:
             result = self.dispatcher.run(action)
         except Exception as exc:  # pragma: no cover - UI feedback
@@ -427,6 +436,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Hata", str(exc))
             return
 
+        LOGGER.info("Action %s completed with data: %s", action.intent, result.data)
         intent_text = {
             "add_event": "Etkinlik kaydedildi",
             "add_task": "Görev kaydedildi",
@@ -450,6 +460,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def refresh_lists(self) -> None:
+        LOGGER.info("Refreshing events and tasks lists")
         self.refresh_events()
         self.refresh_tasks()
 
@@ -458,6 +469,7 @@ class MainWindow(QMainWindow):
         action = Action(intent="list_events", payload={"range": "upcoming"})
         result = self.dispatcher.run(action)
         self._events = result.data.get("events", [])
+        LOGGER.info("Loaded %d events", len(self._events))
         self.meetings_table.setRowCount(len(self._events))
         for row, event in enumerate(self._events):
             start_dt = self._parse_iso(event.get("start_dt"))
@@ -478,6 +490,7 @@ class MainWindow(QMainWindow):
         action = Action(intent="list_tasks", payload={"include_completed": False})
         result = self.dispatcher.run(action)
         self._tasks = result.data.get("tasks", [])
+        LOGGER.info("Loaded %d tasks", len(self._tasks))
         self.todo_table.setRowCount(len(self._tasks))
 
         for row, task in enumerate(self._tasks):
@@ -570,6 +583,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _toggle_listening(self) -> None:
+        LOGGER.info("Toggling listening. Active=%s", self.mic_active)
         if self._speech_worker and self._speech_worker.isRunning():
             self._speech_worker.terminate()
             self._speech_worker = None
@@ -608,6 +622,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_transcribed(self, text: str) -> None:
+        LOGGER.info("Speech transcribed: %s", text)
         self.mic_btn.setText("🎤 Konuş")
         self.mic_btn.primary = False
         self.mic_btn.update_style()
@@ -615,10 +630,12 @@ class MainWindow(QMainWindow):
         self.mic_active = False
 
         action = handle(text)
+        LOGGER.info("Detected action from speech: %s", action)
         self._execute_action(action)
 
     @Slot(str)
     def _on_speech_failed(self, error: str) -> None:
+        LOGGER.error("Speech recognition failed: %s", error)
         self.feedback_label.show_error(error)
         QMessageBox.warning(self, "STT Hatası", error)
         self.mic_btn.setText("🎤 Konuş")

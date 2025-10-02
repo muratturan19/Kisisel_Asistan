@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 
+from config import settings
 from .advisor import collect_daily_warnings, detect_conflicts
 from .intent import Action
 from .scheduler import ReminderScheduler
@@ -235,6 +237,10 @@ class ActionDispatcher:
                     "start_dt": event.start_dt.isoformat(),
                     "end_dt": event.end_dt.isoformat() if event.end_dt else None,
                     "location": event.location,
+                    "notes": event.notes,
+                    "participants": event.participants,
+                    "link": event.link,
+                    "remind_policy": event.remind_policy,
                 }
                 for event in events
             ]
@@ -326,6 +332,11 @@ class ActionDispatcher:
                     "title": task.title,
                     "due_dt": task.due_dt.isoformat() if task.due_dt else None,
                     "status": task.status.value,
+                    "notes": task.notes,
+                    "priority": task.priority,
+                    "tags": task.tags,
+                    "created_at": task.created_at.isoformat(),
+                    "updated_at": task.updated_at.isoformat(),
                 }
                 for task in tasks
             ]
@@ -364,13 +375,40 @@ class ActionDispatcher:
         return {"warnings": warnings}
 
 
+RELATIVE_TOKEN_PATTERN = re.compile(r"\{\s*(today|bugun|bugün|tomorrow|yarin|yarın)\s*\}", re.IGNORECASE)
+
+
+def _normalise_relative_tokens(text: str) -> str:
+    """Replace recognised relative date placeholders with ISO formatted dates."""
+
+    def _replacement(match: re.Match[str]) -> str:
+        token = match.group(1).lower()
+        mapping = {
+            "today": 0,
+            "bugun": 0,
+            "bugün": 0,
+            "tomorrow": 1,
+            "yarin": 1,
+            "yarın": 1,
+        }
+        offset = mapping.get(token, 0)
+        base = dt.datetime.now(tz=settings.timezone).date() + dt.timedelta(days=offset)
+        return base.isoformat()
+
+    return RELATIVE_TOKEN_PATTERN.sub(_replacement, text)
+
+
 def _parse_iso(value: Any) -> Optional[dt.datetime]:
     if not value:
         return None
     if isinstance(value, dt.datetime):
         return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+    text = str(value).strip()
+    if not text:
+        return None
+    text = _normalise_relative_tokens(text)
     try:
-        parsed = dt.datetime.fromisoformat(str(value))
+        parsed = dt.datetime.fromisoformat(text)
     except ValueError:
         return None
     if parsed.tzinfo is None:

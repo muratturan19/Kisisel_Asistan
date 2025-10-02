@@ -89,10 +89,19 @@ class ReminderScheduler:
         return job_ids
 
     def restore_jobs_from_db(self, events: Iterable[Event]) -> int:
-        """Recreate reminder jobs for events loaded from the database."""
+        """Recreate reminder jobs for upcoming events loaded from the database."""
 
         restored = 0
+        now_local = dt.datetime.now(tz=settings.timezone)
         for event in events:
+            start = event.start_dt
+            if start is None:
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt.timezone.utc)
+            if start.astimezone(settings.timezone) <= now_local:
+                LOGGER.debug("Skipping reminder restore for past event %s", event.id)
+                continue
             policy = event.remind_policy or {"minutes_before": settings.default_reminders}
             job_ids = self.schedule_event_reminders(event, policy)
             restored += len(job_ids)

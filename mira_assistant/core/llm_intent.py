@@ -14,27 +14,90 @@ from config import settings
 
 LOGGER = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Sen bir Türkçe asistan komut parser'ısın.\n""" \
-    "Kullanıcının doğal dil komutunu analiz edip şu formatta JSON döndür:\n\n" \
+SYSTEM_PROMPT = """Sen bir Türkçe kişisel asistan komut parser'ısın.\n""" \
+    "Kullanıcının doğal dil komutunu analiz edip JSON formatında intent ve payload döndürüyorsun.\n\n" \
+    "**ÇOK ÖNEMLİ: Intent Seçim Kuralları**\n\n" \
+    "1. **add_task**: Kullanıcı gelecekte KENDİSİNİN yapması gereken bir iş belirtiyorsa\n" \
+    "   - \"rapor hazırla\", \"çiçek gönder\", \"market alışverişi yap\"\n" \
+    "   - \"...yapmalıyım\", \"...yapmam lazım\", \"...göndermeliyim\"\n" \
+    "   - Kullanıcının TODO listesine eklenecek işler\n\n" \
+    "2. **add_event**: Katılacağı bir etkinlik/toplantı/randevu\n" \
+    "   - \"toplantı var\", \"konsere gideceğim\", \"doktora gideceğim\"\n" \
+    "   - \"ile görüşeceğim\", \"...da buluşma\"\n\n" \
+    "3. **list_tasks**: Yapılacakları göster\n" \
+    "   - \"yapılacaklar\", \"görevlerim\", \"ne yapmam lazım\"\n\n" \
+    "4. **list_events**: Etkinlikleri göster\n" \
+    "   - \"takvim\", \"bu hafta ne var\", \"yaklaşan toplantılar\"\n\n" \
+    "5. **summarize_topic**: SADECE kullanıcı mevcut belgelerin özetini İSTERSE\n" \
+    "   - \"X konusunu özetle\", \"Y hakkında özet çıkar\"\n" \
+    "   - NOT: \"özet rapor HAZIRLA\" bu değil! Bu add_task'tır!\n\n" \
+    "6. **note**: Tarih/yapılacak olmayan serbest notlar\n" \
+    "   - \"not: ...\", \"kaydet: ...\"\n\n" \
+    "**Payload Formatları:**\n\n" \
+    "add_task:\n" \
     "{\n" \
-    '  "intent": "add_event | add_task | add_note | list_events | list_tasks | schedule_reminder | ingest_docs | summarize_topic | advise_on_topic | update_event | update_task | delete_event | delete_task | complete_task | note",\n' \
-    '  "payload": {...}\n' \
+    "  \"intent\": \"add_task\",\n" \
+    "  \"payload\": {\n" \
+    "    \"title\": \"Rapor hazırla\",\n" \
+    "    \"due\": \"2025-10-03T17:00:00+03:00\"\n" \
+    "  }\n" \
     "}\n\n" \
-    "Intent tipleri:\n" \
-    "- add_event: Toplantı, etkinlik, randevu ekle\n" \
-    "- add_task: Yapılacak iş, görev ekle\n" \
-    "- add_note: Not al\n" \
-    "- list_events: Etkinlikleri listele\n" \
-    "- list_tasks: Görevleri listele\n" \
-    "- schedule_reminder: Hatırlatıcı kur\n" \
-    "- ingest_docs: Dosya, belge, doküman yüklemelerini yönet\n" \
-    "- summarize_topic: Belirli bir konu için özet hazırla\n" \
-    "- advise_on_topic: Riskler ve uyarılar sağla\n" \
-    "- update_event / update_task: İlgili kaydı güncelle\n" \
-    "- delete_event / delete_task: Kaydı sil\n" \
-    "- complete_task: Görevi tamamlandı olarak işaretle\n" \
-    "- note: Diğer ifadeleri not olarak kaydet\n\n" \
-    "Tarih/saat için ISO 8601 formatı kullan (Europe/Istanbul timezone).\n"
+    "add_event:\n" \
+    "{\n" \
+    "  \"intent\": \"add_event\",\n" \
+    "  \"payload\": {\n" \
+    "    \"title\": \"Müşteri toplantısı\",\n" \
+    "    \"start\": \"2025-10-03T14:00:00+03:00\",\n" \
+    "    \"location\": \"Online\"\n" \
+    "  }\n" \
+    "}\n\n" \
+    "note:\n" \
+    "{\n" \
+    "  \"intent\": \"note\",\n" \
+    "  \"payload\": {\n" \
+    "    \"text\": \"Not içeriği\",\n" \
+    "    \"title\": \"Başlık (opsiyonel)\"\n" \
+    "  }\n" \
+    "}\n\n" \
+    "**Tarih/Saat Kuralları:**\n" \
+    "- Bugün: {today}\n" \
+    "- Saat dilimi: Europe/Istanbul (UTC+3)\n" \
+    "- \"bu akşam\" → bugün 18:00\n" \
+    "- \"yarın\" → yarın 09:00 (task) veya belirtilen saat (event)\n" \
+    "- Tarih belirtilmezse: bugün/yarın tahmin et\n\n" \
+    "**Örnekler:**\n\n" \
+    "Kullanıcı: \"özet rapor hazırla\"\n" \
+    "{\n" \
+    "  \"intent\": \"add_task\",\n" \
+    "  \"payload\": {\n" \
+    "    \"title\": \"Özet rapor hazırla\",\n" \
+    "    \"due\": \"{today}T17:00:00+03:00\"\n" \
+    "  }\n" \
+    "}\n\n" \
+    "Kullanıcı: \"bu akşam eşime çiçek göndermem lazım\"\n" \
+    "{\n" \
+    "  \"intent\": \"add_task\",\n" \
+    "  \"payload\": {\n" \
+    "    \"title\": \"Eşime çiçek gönder\",\n" \
+    "    \"due\": \"{today}T18:00:00+03:00\"\n" \
+    "  }\n" \
+    "}\n\n" \
+    "Kullanıcı: \"yarın saat 14 te müşteri görüşmesi\"\n" \
+    "{\n" \
+    "  \"intent\": \"add_event\",\n" \
+    "  \"payload\": {\n" \
+    "    \"title\": \"Müşteri görüşmesi\",\n" \
+    "    \"start\": \"{tomorrow}T14:00:00+03:00\"\n" \
+    "  }\n" \
+    "}\n\n" \
+    "Kullanıcı: \"satış raporlarını özetle\" (mevcut belgeler için)\n" \
+    "{\n" \
+    "  \"intent\": \"summarize_topic\",\n" \
+    "  \"payload\": {\n" \
+    "    \"topic\": \"satış raporları\"\n" \
+    "  }\n" \
+    "}\n\n" \
+    "Sadece JSON döndür, başka açıklama ekleme.\n"
 
 _client: Optional[OpenAI] = None
 

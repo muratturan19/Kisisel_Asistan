@@ -34,9 +34,7 @@ SYSTEM_PROMPT = """Sen bir Türkçe asistan komut parser'ısın.\n""" \
     "- delete_event / delete_task: Kaydı sil\n" \
     "- complete_task: Görevi tamamlandı olarak işaretle\n" \
     "- note: Diğer ifadeleri not olarak kaydet\n\n" \
-    "Tarih/saat için ISO 8601 formatı kullan (Europe/Istanbul timezone).\n" \
-    "Bugün: {today}\n" \
-    "Her zaman geçerli JSON döndür. Ek açıklama yazma."
+    "Tarih/saat için ISO 8601 formatı kullan (Europe/Istanbul timezone).\n"
 
 _client: Optional[OpenAI] = None
 
@@ -52,7 +50,11 @@ def _get_client() -> OpenAI:
 
 def _system_prompt() -> str:
     today = dt.datetime.now(settings.timezone).strftime("%Y-%m-%d")
-    return SYSTEM_PROMPT.format(today=today)
+    return (
+        SYSTEM_PROMPT
+        + f"Bugün: {today}\n"
+        + "Her zaman geçerli JSON döndür. Ek açıklama yazma."
+    )
 
 
 def handle_with_llm(text: str) -> Optional["Action"]:

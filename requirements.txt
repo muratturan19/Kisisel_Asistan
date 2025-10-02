@@ -24,3 +24,4 @@ sentence-transformers==5.1.1
 numpy==2.3.3
 PySide6>=6.9.3
 pystray==0.19.5
+openai==1.59.7

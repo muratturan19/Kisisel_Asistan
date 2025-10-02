@@ -51,6 +51,9 @@ class Settings:
     data_dir: Path = Path(os.getenv("MIRA_DATA_DIR", str(DEFAULT_DATA_DIR))).expanduser()
     timezone_name: str = os.getenv("MIRA_TZ", DEFAULT_TIMEZONE)
     offline_only: bool = _bool_env("MIRA_OFFLINE_ONLY", True)
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    use_llm_intent: bool = _bool_env("MIRA_USE_LLM", True)
+    llm_model: str = os.getenv("MIRA_LLM_MODEL", "gpt-4o-mini")
     default_reminders: List[int] = field(
         default_factory=lambda: _load_int_list(os.getenv("MIRA_REMINDERS"), DEFAULT_REMINDERS)
     )

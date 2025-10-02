@@ -1,14 +1,18 @@
-"""Rule based Turkish intent detection returning Action JSON payloads."""
+"""Hybrid intent detection mixing LLM parsing with rule based fallbacks."""
 from __future__ import annotations
 
 import dataclasses
 import datetime as dt
 import json
+import logging
 import re
 from typing import Any, Dict, Iterable, Optional
 
 from .parser_tr import parse_datetime, to_utc
 from config import settings
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(slots=True)
@@ -51,6 +55,26 @@ _TITLE_FALLBACK = "Mira Notu"
 
 def handle(text: str) -> Optional[Action]:
     """Return an :class:`Action` inferred from the natural language command."""
+
+    stripped = text.strip()
+    if not stripped:
+        return None
+
+    if settings.use_llm_intent and settings.openai_api_key:
+        try:
+            from .llm_intent import handle_with_llm
+
+            llm_action = handle_with_llm(stripped)
+            if llm_action is not None:
+                return llm_action
+        except Exception as exc:  # pragma: no cover - graceful degradation
+            LOGGER.warning("LLM intent failed, falling back to rules: %s", exc, exc_info=True)
+
+    return handle_with_rules(stripped)
+
+
+def handle_with_rules(text: str) -> Optional[Action]:
+    """Fallback rule based intent detection."""
 
     lowered = text.lower().strip()
     if not lowered:
@@ -177,4 +201,4 @@ def detect_intent(text: str) -> Optional[Action]:
     return handle(text)
 
 
-__all__ = ["Action", "ActionJSON", "handle", "detect_intent"]
+__all__ = ["Action", "ActionJSON", "handle", "handle_with_rules", "detect_intent"]

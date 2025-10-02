@@ -15,6 +15,7 @@ dependencies = [
   "dateparser",
   "fastapi",
   "pypdf",
+  "python-dotenv",
   "rich",
   "sqlmodel",
   "typer",

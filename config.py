@@ -16,8 +16,28 @@ from pathlib import Path
 from typing import Iterable, List
 from zoneinfo import ZoneInfo
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency guard
+    load_dotenv = None
+
 
 BASE_DIR = Path(__file__).parent
+
+if load_dotenv:  # pragma: no branch - simple configuration loader
+    candidate_paths = []
+    if env_file := os.environ.get("MIRA_ENV_FILE"):
+        candidate_paths.append(Path(env_file).expanduser())
+    candidate_paths.append(BASE_DIR / ".env")
+    candidate_paths.append(BASE_DIR.parent / ".env")
+    loaded = False
+    for env_path in candidate_paths:
+        if env_path and env_path.exists():
+            load_dotenv(env_path, override=False)
+            loaded = True
+            break
+    if not loaded:
+        load_dotenv(override=False)
 DEFAULT_REMINDERS = [1440, 60, 10]
 DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_TIMEZONE = "Europe/Istanbul"

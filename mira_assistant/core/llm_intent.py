@@ -112,12 +112,13 @@ def _get_client() -> OpenAI:
 
 
 def _system_prompt() -> str:
-    today = dt.datetime.now(settings.timezone).strftime("%Y-%m-%d")
-    return (
-        SYSTEM_PROMPT
-        + f"Bugün: {today}\n"
-        + "Her zaman geçerli JSON döndür. Ek açıklama yazma."
+    now = dt.datetime.now(settings.timezone)
+    today = now.strftime("%Y-%m-%d")
+    tomorrow = (now + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    prompt = (
+        SYSTEM_PROMPT.replace("{today}", today).replace("{tomorrow}", tomorrow)
     )
+    return prompt + f"Bugün: {today}\nHer zaman geçerli JSON döndür. Ek açıklama yazma."
 
 
 def handle_with_llm(text: str) -> Optional["Action"]:

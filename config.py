@@ -2,8 +2,10 @@
 
 This module centralises directory paths, timezone configuration and model
 selection so that the rest of the codebase can rely on a single source of
-truth.  Values are read from the environment when available but sensible
-defaults matching the product brief are provided.
+truth. Values are read from the environment when available but sensible
+defaults matching the product brief are provided.  The defaults now place
+the data directory inside the project tree to ensure that local development
+environments always create the expected ``data/`` folder.
 """
 from __future__ import annotations
 
@@ -15,11 +17,12 @@ from typing import Iterable, List
 from zoneinfo import ZoneInfo
 
 
+BASE_DIR = Path(__file__).parent
 DEFAULT_REMINDERS = [1440, 60, 10]
-DEFAULT_DATA_DIR = "~/MiraData"
+DEFAULT_DATA_DIR = BASE_DIR / "data"
 DEFAULT_TIMEZONE = "Europe/Istanbul"
 DEFAULT_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-DEFAULT_CHROMA_PATH = "~/MiraData/index"
+DEFAULT_CHROMA_PATH = DEFAULT_DATA_DIR / "index"
 
 
 def _load_int_list(value: str | None, fallback: Iterable[int]) -> List[int]:
@@ -45,14 +48,14 @@ def _bool_env(name: str, default: bool) -> bool:
 class Settings:
     """Runtime settings resolved from the environment."""
 
-    data_dir: Path = Path(os.getenv("MIRA_DATA_DIR", DEFAULT_DATA_DIR)).expanduser()
+    data_dir: Path = Path(os.getenv("MIRA_DATA_DIR", str(DEFAULT_DATA_DIR))).expanduser()
     timezone_name: str = os.getenv("MIRA_TZ", DEFAULT_TIMEZONE)
     offline_only: bool = _bool_env("MIRA_OFFLINE_ONLY", True)
     default_reminders: List[int] = field(
         default_factory=lambda: _load_int_list(os.getenv("MIRA_REMINDERS"), DEFAULT_REMINDERS)
     )
     embed_model_name: str = os.getenv("MIRA_EMBED_MODEL", DEFAULT_EMBED_MODEL)
-    chroma_path: Path = Path(os.getenv("MIRA_CHROMA_PATH", DEFAULT_CHROMA_PATH)).expanduser()
+    chroma_path: Path = Path(os.getenv("MIRA_CHROMA_PATH", str(DEFAULT_CHROMA_PATH))).expanduser()
 
     def ensure_directories(self) -> None:
         """Create all folders required by the assistant if they do not exist."""

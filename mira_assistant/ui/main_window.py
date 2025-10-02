@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from PySide6.QtCore import QThread, Qt, Signal, Slot, QTimer, QSize
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -372,12 +372,11 @@ class MainWindow(QMainWindow):
 
         self.todo_table = QTableWidget()
         self.todo_table.setObjectName("tableTodos")
-        self.todo_table.setColumnCount(4)
-        self.todo_table.setHorizontalHeaderLabels(["✓", "Görev", "Tarih", "Durum"])
+        self.todo_table.setColumnCount(3)
+        self.todo_table.setHorizontalHeaderLabels(["✓", "Görev", "Tarih"])
         self.todo_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.todo_table.setColumnWidth(0, 40)
-        self.todo_table.setColumnWidth(2, 120)
-        self.todo_table.setColumnWidth(3, 90)
+        self.todo_table.setColumnWidth(2, 160)
         self.todo_table.verticalHeader().setVisible(False)
         self.todo_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
@@ -508,18 +507,15 @@ class MainWindow(QMainWindow):
             checkbox_layout.setContentsMargins(0, 0, 0, 0)
             self.todo_table.setCellWidget(row, 0, checkbox_widget)
 
-            title_item = QTableWidgetItem(task.get("title") or "-")
+            title_text = task.get("title") or "-"
+            title_item = QTableWidgetItem(title_text)
+            title_item.setToolTip(title_text)
             self.todo_table.setItem(row, 1, title_item)
 
             due_text = self._format_datetime(task.get("due_dt"))
-            self.todo_table.setItem(row, 2, QTableWidgetItem(due_text))
-
-            status_item = QTableWidgetItem(status.capitalize())
-            if status == "done":
-                status_item.setForeground(QColor("#4CAF50"))
-            else:
-                status_item.setForeground(QColor("#F44336"))
-            self.todo_table.setItem(row, 3, status_item)
+            due_item = QTableWidgetItem(due_text)
+            due_item.setTextAlignment(Qt.AlignCenter)
+            self.todo_table.setItem(row, 2, due_item)
 
         self._update_summary_stats()
 
@@ -531,7 +527,6 @@ class MainWindow(QMainWindow):
             self._execute_action(action)
         else:
             # undo is not supported, revert checkbox via refresh
-            self.feedback_label.show_error("Görev yeniden açma desteklenmiyor.")
             self.refresh_tasks()
 
     def _update_summary_stats(self) -> None:
@@ -566,7 +561,7 @@ class MainWindow(QMainWindow):
         if parsed is None:
             return "-"
         local = parsed.astimezone()
-        return local.strftime("%d.%m %H:%M")
+        return local.strftime("%d %b %a %H:%M")
 
     @staticmethod
     def _parse_iso(value: Optional[str]) -> Optional[dt.datetime]:

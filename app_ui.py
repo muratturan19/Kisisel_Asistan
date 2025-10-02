@@ -19,6 +19,8 @@ logging.basicConfig(
     handlers=[logging.FileHandler(str(settings.log_dir / "mira.log")), logging.StreamHandler(sys.stdout)],
 )
 
+LOGGER = logging.getLogger(__name__)
+
 
 def create_app() -> tuple[QApplication, MainWindow, TrayController]:
     # Initialize the database (create tables if they don't exist)

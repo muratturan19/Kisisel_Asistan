@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -32,6 +33,9 @@ from .vector_store import VectorStore
 from ..io.ingest import DocumentIngestor
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 @dataclass
 class ActionResult:
     intent: str
@@ -46,12 +50,19 @@ class ActionDispatcher:
         self.vector_store = vector_store or VectorStore()
         self.ingestor = DocumentIngestor(vector_store=self.vector_store)
         init_db()
+        LOGGER.info(
+            "ActionDispatcher initialised with scheduler=%s vector_store=%s",
+            type(self.scheduler).__name__,
+            type(self.vector_store).__name__,
+        )
 
     def run(self, action: Action) -> ActionResult:
+        LOGGER.info("Dispatching action %s with payload %s", action.intent, action.payload)
         handler = getattr(self, f"handle_{action.intent}", None)
         if handler is None:
             raise NotImplementedError(f"Intent {action.intent} is not supported")
         data = handler(action.payload)
+        LOGGER.info("Action %s finished with response %s", action.intent, data)
         return ActionResult(intent=action.intent, data=data)
 
     # Event handlers
@@ -68,10 +79,18 @@ class ActionDispatcher:
             link=payload.get("link"),
             notes=payload.get("notes"),
         )
+        LOGGER.info(
+            "Creating event title=%s start=%s end=%s location=%s",
+            event.title,
+            event.start_dt,
+            event.end_dt,
+            event.location,
+        )
         with get_session() as session:
             event = add_event(session, event)
             warnings = detect_conflicts(session, event)
         jobs = self.scheduler.schedule_event_reminders(event, event.remind_policy)
+        LOGGER.info("Event saved with id=%s, scheduled jobs=%s", event.id, jobs)
         return {"event_id": event.id, "warnings": warnings, "jobs": jobs}
 
     def handle_update_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -86,12 +105,14 @@ class ActionDispatcher:
         with get_session() as session:
             event = session.get(Event, event_id)
             if event is None:
+                LOGGER.warning("Event %s not found for update", event_id)
                 return {"updated": False}
             for key, value in updates.items():
                 setattr(event, key, value)
             session.add(event)
             session.commit()
             session.refresh(event)
+        LOGGER.info("Event %s updated with %s", event_id, updates)
         self.scheduler.cancel_event_reminders(event_id)
         self.scheduler.schedule_event_reminders(event, event.remind_policy)
         if hasattr(event, "model_dump"):
@@ -106,6 +127,9 @@ class ActionDispatcher:
             deleted = delete_event(session, event_id)
         if deleted:
             self.scheduler.cancel_event_reminders(event_id)
+            LOGGER.info("Event %s deleted and reminders cancelled", event_id)
+        else:
+            LOGGER.warning("Delete event requested but id=%s not found", event_id)
         return {"deleted": deleted}
 
     def handle_note(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,6 +146,7 @@ class ActionDispatcher:
         note = Note(title=title, content=text)
         with get_session() as session:
             note = add_note(session, note)
+        LOGGER.info("Note saved with id=%s", note.id)
         return {"saved": True, "note_id": note.id}
 
     def handle_list_events(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -141,6 +166,7 @@ class ActionDispatcher:
             end = now + dt.timedelta(days=7)
         with get_session() as session:
             events = list_events_between(session, now, end)
+        LOGGER.info("Listing events between %s and %s -> %d records", now, end, len(events))
         return {
             "events": [
                 {
@@ -165,6 +191,7 @@ class ActionDispatcher:
         )
         with get_session() as session:
             task = upsert_task(session, task)
+        LOGGER.info("Task saved with id=%s", task.id)
         return {"task_id": task.id}
 
     def handle_update_task(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -172,6 +199,7 @@ class ActionDispatcher:
         with get_session() as session:
             task = session.get(Task, task_id)
             if task is None:
+                LOGGER.warning("Task %s not found for update", task_id)
                 return {"updated": False}
             if "title" in payload:
                 task.title = payload["title"]
@@ -182,6 +210,7 @@ class ActionDispatcher:
             session.add(task)
             session.commit()
             session.refresh(task)
+        LOGGER.info("Task %s updated with payload %s", task_id, payload)
         if hasattr(task, "model_dump"):
             payload = task.model_dump()  # type: ignore[attr-defined]
         else:
@@ -192,12 +221,17 @@ class ActionDispatcher:
         task_id = int(payload.get("task_id", 0))
         with get_session() as session:
             task = complete_task(session, task_id)
+        if task is None:
+            LOGGER.warning("Task %s could not be marked complete (not found)", task_id)
+        else:
+            LOGGER.info("Task %s marked as complete", task_id)
         return {"completed": task is not None}
 
     def handle_list_tasks(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         include_completed = payload.get("include_completed", False)
         with get_session() as session:
             tasks = list_tasks(session, include_completed=include_completed)
+        LOGGER.info("Listing tasks include_completed=%s -> %d records", include_completed, len(tasks))
         return {
             "tasks": [
                 {

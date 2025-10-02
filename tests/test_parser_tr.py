@@ -33,3 +33,14 @@ def test_time_detection_handles_apostrophes() -> None:
     assert parsed.hour == 10
     assert parsed.minute == 0
     assert parsed.day == 22
+
+
+def test_evening_hours_are_interpreted_as_pm() -> None:
+    reference = dt.datetime(2025, 10, 2, 12, 0, tzinfo=IST)
+    parser_tr = __import__("mira_assistant.core.parser_tr", fromlist=["parse_datetime"])
+
+    parsed = parser_tr.parse_datetime("Akşam saat 9 da poyrazı terminalden al", reference=reference)
+
+    assert parsed.hour == 21
+    assert parsed.minute == 0
+    assert parsed.date() == reference.date()
